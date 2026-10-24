@@ -1,0 +1,87 @@
+<!doctype html>
+<!-- Camera live view in the browser (Chrome, Edge, Chrome on Android).
+     Keys: 4 = 1080p/4K, c = next camera, s or space = snapshot (PNG to Downloads), f = fullscreen.
+     On a phone the page needs https for camera access. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Microscope</title>
+<style>
+  :root { --bg: #000; --btn: #323238cc; --hov: #484850; --on: #006ec8; --txt: #ebebeb; }
+  html, body { margin: 0; height: 100%; background: var(--bg); color: var(--txt);
+               font: 14px "Segoe UI", system-ui, sans-serif; overflow: hidden; }
+  video { width: 100%; height: 100%; object-fit: contain; display: block; }
+  #bar { position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); display: flex; gap: 8px; }
+  button { width: 44px; height: 44px; border: 0; border-radius: 10px; background: var(--btn); color: var(--txt);
+           font: 600 14px "Segoe UI", sans-serif; cursor: pointer; display: grid; place-items: center; }
+  button:hover { background: var(--hov); }
+  button.on { background: var(--on); }
+  button[hidden] { display: none; }
+  svg { width: 22px; height: 22px; fill: none; stroke: currentColor; stroke-width: 1.6; }
+  #status { position: fixed; top: 12px; left: 12px; padding: 5px 12px; border-radius: 8px; background: var(--btn); }
+  #status:empty { display: none; }
+  #flash { position: fixed; inset: 0; background: #fff; opacity: 0; pointer-events: none; transition: opacity .3s; }
+</style>
+</head>
+<body>
+<video id="video" autoplay muted playsinline></video>
+<div id="status">Connecting to the camera ...</div>
+<div id="bar">
+  <button id="res" title="1080p 60 fps / 4K 30 fps (4)">4K</button>
+  <button id="cam" title="Next camera (C)" hidden>
+    <svg viewBox="0 0 24 24"><path d="M4 11a8 8 0 0 1 14-5l2 2M20 13a8 8 0 0 1-14 5l-2-2M20 4v4h-4M4 20v-4h4"/></svg>
+  </button>
+  <button id="snap" title="Snapshot (S)">
+    <svg viewBox="0 0 24 24"><path d="M3 8h4l2-3h6l2 3h4v11H3z"/><circle cx="12" cy="13" r="3.5"/></svg>
+  </button>
+  <button id="full" title="Fullscreen (F)">
+    <svg viewBox="0 0 24 24"><path d="M4 9V4h5M15 4h5v5M20 15v5h-5M9 20H4v-5"/></svg>
+  </button>
+</div>
+<div id="flash"></div>
+<script>
+const HD = { width: 1920, height: 1080, frameRate: 60 }, UHD = { width: 3840, height: 2160, frameRate: 30 };
+const $ = id => document.getElementById(id), video = $("video"), status = $("status");
+let mode = HD, cams = [], cam = 0, info = "", frames = 0;
+
+async function open(m) {
+  status.textContent = info ? "Switching ..." : "Connecting to the camera ...";  // camera 0 first, nextCam() cycles
+  video.srcObject?.getTracks().forEach(t => t.stop());  // only one user per camera
+  if (!cams.length) {  // device ids and labels are only visible once access is granted
+    (await navigator.mediaDevices.getUserMedia({ video: true })).getTracks().forEach(t => t.stop());
+    cams = (await navigator.mediaDevices.enumerateDevices()).filter(d => d.kind === "videoinput");
+    $("cam").hidden = cams.length < 2;
+  }
+  const c = { deviceId: { exact: cams[cam].deviceId } };
+  for (const k in m) c[k] = { ideal: m[k] };
+  video.srcObject = await navigator.mediaDevices.getUserMedia({ video: c });
+  const s = video.srcObject.getVideoTracks()[0].getSettings();
+  mode = m; $("res").classList.toggle("on", s.width >= 3840);  // a camera without 4K stays lower
+  info = `${cams[cam].label || "camera " + (cam + 1)} ${s.width}x${s.height}`; status.textContent = "";
+}
+
+function snapshot() {  // full camera frame as PNG, lands in Downloads
+  const c = Object.assign(document.createElement("canvas"), { width: video.videoWidth, height: video.videoHeight });
+  c.getContext("2d").drawImage(video, 0, 0);
+  const t = new Date(Date.now() - new Date().getTimezoneOffset() * 6e4).toISOString().slice(0, 19).replace(/[-:]/g, "").replace("T", "-");
+  c.toBlob(b => Object.assign(document.createElement("a"), { href: URL.createObjectURL(b), download: `microscope-${t}.png` }).click());
+  $("flash").style.opacity = .5; setTimeout(() => $("flash").style.opacity = 0, 80);
+}
+
+const toggleRes = () => open(mode === UHD ? HD : UHD).catch(fail);
+const nextCam = () => { cam = (cam + 1) % cams.length; open(mode).catch(fail); };
+const fullscreen = () => document.fullscreenElement ? document.exitFullscreen() : document.documentElement.requestFullscreen();
+const fail = e => status.textContent = `Camera: ${e.message || e.name}`;
+$("res").onclick = toggleRes; $("cam").onclick = nextCam; $("snap").onclick = snapshot; $("full").onclick = fullscreen;
+addEventListener("keydown", e => ({ "4": toggleRes, c: nextCam, s: snapshot, " ": snapshot, f: fullscreen })[e.key]?.());
+
+// fps for the title bar: frames really shown per second
+const count = () => { frames++; video.requestVideoFrameCallback(count); };
+video.requestVideoFrameCallback(count);
+setInterval(() => { document.title = info ? `Microscope ${info} ${frames} fps` : "Microscope"; frames = 0; }, 1000);
+
+open(HD).catch(fail);
+</script>
+</body>
+</html>
