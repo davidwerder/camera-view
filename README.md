@@ -14,3 +14,5 @@ Open it from the GitHub Pages address (camera access needs https). Runs in
 Chrome and Edge, also Chrome on Android; an external USB camera shows up on a
 phone only where Android passes it on to the browser. Nothing leaves the
 device: the page has no server side and loads nothing from elsewhere.
+
+License: MIT, see `LICENSE`.
